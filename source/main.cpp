@@ -299,11 +299,11 @@ void GameLoop(PlayerInfo &player, const Conversation &conversation, const string
 		SDL_Keymod mod = SDL_GetModState();
 		Font::ShowUnderlines(mod & KMOD_ALT);
 
-		// In full-screen mode, hide the cursor if inactive for ten seconds,
-		// but only if the player is flying around in the main view.
+		// Hide the cursor if inactive for ten seconds, but only if the player
+		// is flying around in the main view.
 		bool inFlight = (menuPanels.IsEmpty() && gamePanels.Root() == gamePanels.Top());
 		++cursorTime;
-		bool shouldShowCursor = (!GameWindow::IsFullscreen() || cursorTime < 600 || !inFlight);
+		bool shouldShowCursor = (cursorTime < 600 || !inFlight);
 		if(shouldShowCursor != showCursor)
 		{
 			showCursor = shouldShowCursor;
