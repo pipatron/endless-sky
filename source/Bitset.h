@@ -13,8 +13,7 @@ You should have received a copy of the GNU General Public License along with
 this program. If not, see <https://www.gnu.org/licenses/>.
 */
 
-#ifndef BITSET_H_
-#define BITSET_H_
+#pragma once
 
 #include <cstddef>
 #include <cstdint>
@@ -42,6 +41,8 @@ public:
 	bool Test(size_t index) const noexcept;
 	// Sets the bit at the specified index.
 	void Set(size_t index) noexcept;
+	// Resets all bits in the bitset.
+	void Reset() noexcept;
 	// Whether any bits are set.
 	bool Any() const noexcept;
 	// Whether no bits are set.
@@ -57,7 +58,3 @@ private:
 	// Stores the bits of the bitset.
 	std::vector<uint64_t> bits;
 };
-
-
-
-#endif

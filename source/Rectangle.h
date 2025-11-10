@@ -13,8 +13,7 @@ You should have received a copy of the GNU General Public License along with
 this program. If not, see <https://www.gnu.org/licenses/>.
 */
 
-#ifndef RECTANGLE_H_
-#define RECTANGLE_H_
+#pragma once
 
 #include "Point.h"
 
@@ -56,6 +55,8 @@ public:
 	double Right() const;
 	double Bottom() const;
 	Point TopLeft() const;
+	Point TopRight() const;
+	Point BottomLeft() const;
 	Point BottomRight() const;
 
 	// Check if a point is inside this rectangle.
@@ -63,13 +64,13 @@ public:
 	// Check if the given rectangle is inside this one. If one of its edges is
 	// touching the edge of this one, that still counts.
 	bool Contains(const Rectangle &other) const;
+	// Check if the given rectangle overlaps with this one.
+	bool Overlaps(const Rectangle &other) const;
+	// Check if the given circle overlaps with this rectangle.
+	bool Overlaps(const Point &center, double radius) const;
 
 
 private:
 	Point center;
 	Point dimensions;
 };
-
-
-
-#endif

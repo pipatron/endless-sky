@@ -22,7 +22,7 @@ this program. If not, see <https://www.gnu.org/licenses/>.
 using namespace std;
 
 namespace {
-	template <typename T>
+	template<typename T>
 	void SubsetAssign(std::vector<T> &lhs, const std::vector<T> &rhs) noexcept
 	{
 		const auto size = lhs.size() < rhs.size() ? lhs.size() : rhs.size();
@@ -59,8 +59,9 @@ void FireCommand::UpdateWith(const FireCommand &other) noexcept
 // Reset this to an empty command.
 void FireCommand::Clear()
 {
-	weapon.Clear();
-	aim.clear();
+	weapon.Reset();
+	for(auto &it : aim)
+		it = '\0';
 }
 
 

@@ -13,19 +13,23 @@ You should have received a copy of the GNU General Public License along with
 this program. If not, see <https://www.gnu.org/licenses/>.
 */
 
-#ifndef PANEL_H_
-#define PANEL_H_
+#pragma once
 
+#include "MouseButton.h"
 #include "Rectangle.h"
 
 #include <functional>
 #include <list>
+#include <memory>
+#include <mutex>
 #include <string>
+#include <vector>
 
 #include <SDL2/SDL.h>
 
 class Command;
 class Point;
+class Sprite;
 class TestContext;
 class UI;
 
@@ -37,6 +41,11 @@ class UI;
 // default, a panel allows the panels under it to show through, but does not
 // allow them to receive any events that it does not know how to handle.
 class Panel {
+public:
+	// Draw a sprite repeatedly to make a vertical edge.
+	static void DrawEdgeSprite(const Sprite *edgeSprite, int posX);
+
+
 public:
 	// Make the destructor virtual just in case any derived class needs it.
 	virtual ~Panel() = default;
@@ -65,22 +74,23 @@ public:
 	// so, apply that zone's action and return true.
 	bool ZoneClick(const Point &point);
 
-	// Forward the given TestContext to the Engine under MainPanel.
-	virtual void SetTestContext(TestContext &testContext);
-
 	// Is fast-forward allowed to be on when this panel is on top of the GUI stack?
 	virtual bool AllowsFastForward() const noexcept;
+
+	virtual void UpdateTooltipActivation();
 
 
 protected:
 	// Only override the ones you need; the default action is to return false.
 	virtual bool KeyDown(SDL_Keycode key, Uint16 mod, const Command &command, bool isNewPress);
-	virtual bool Click(int x, int y, int clicks);
-	virtual bool RClick(int x, int y);
+	virtual bool Click(int x, int y, MouseButton button, int clicks);
 	virtual bool Hover(int x, int y);
 	virtual bool Drag(double dx, double dy);
-	virtual bool Release(int x, int y);
+	virtual bool Release(int x, int y, MouseButton button);
 	virtual bool Scroll(double dx, double dy);
+
+	virtual void Resize();
+
 	// If a clickable zone is clicked while editing is happening, the panel may
 	// need to know to exit editing mode before handling the click.
 	virtual void EndEditing() {}
@@ -93,6 +103,7 @@ protected:
 	void DrawBackdrop() const;
 
 	UI *GetUI() const noexcept;
+	void SetUI(UI *ui);
 
 	// This is not for overriding, but for calling KeyDown with only one or two
 	// arguments. In this form, the command is never set, so you can call this
@@ -103,10 +114,17 @@ protected:
 	// A lot of different UI elements allow a modifier to change the number of
 	// something you are buying, so the shared function is defined here:
 	static int Modifier();
-	// Display the given help message if it has not yet been shown. Return true
-	// if the message was displayed.
-	bool DoHelp(const std::string &name) const;
+	// Display the given help message if it has not yet been shown
+	// (or if force is set to true). Return true if the message was displayed.
+	bool DoHelp(const std::string &name, bool force = false) const;
 
+	const std::vector<std::shared_ptr<Panel>> &GetChildren();
+	// Add a child. Deferred until next frame.
+	void AddChild(const std::shared_ptr<Panel> &panel);
+	// Remove a child. Deferred until next frame.
+	void RemoveChild(const Panel *panel);
+	// Handle deferred add/remove child operations.
+	void AddOrRemove();
 
 private:
 	class Zone : public Rectangle {
@@ -119,9 +137,25 @@ private:
 		std::function<void()> fun;
 	};
 
+	// The UI class will not directly call the virtual methods, but will call
+	// these instead. These methods will recursively allow child panels to
+	// handle the event first, before calling the virtual method for the derived
+	// class to handle it.
+	bool DoKeyDown(SDL_Keycode key, Uint16 mod, const Command &command, bool isNewPress);
+	bool DoClick(int x, int y, MouseButton button, int clicks);
+	bool DoHover(int x, int y);
+	bool DoDrag(double dx, double dy);
+	bool DoRelease(int x, int y, MouseButton button);
+	bool DoScroll(double dx, double dy);
 
-private:
-	void SetUI(UI *ui);
+	void DoDraw();
+
+	void DoResize();
+
+	// Call a method on all the children in reverse order, and then on this
+	// object. Recursion stops as soon as any child returns true.
+	template<typename...FARGS, typename...ARGS>
+	bool EventVisit(bool(Panel::*f)(FARGS ...args), ARGS ...args);
 
 
 private:
@@ -133,9 +167,23 @@ private:
 
 	std::list<Zone> zones;
 
+	std::vector<std::shared_ptr<Panel>> children;
+	std::vector<std::shared_ptr<Panel>> childrenToAdd;
+	std::vector<const Panel *> childrenToRemove;
+
 	friend class UI;
 };
 
 
 
-#endif
+template<typename ...FARGS, typename ...ARGS>
+bool Panel::EventVisit(bool (Panel::*f)(FARGS ...), ARGS ...args)
+{
+	// Check if a child panel will consume this event first.
+	for(auto it = children.rbegin(); it != children.rend(); ++it)
+		if((*it)->EventVisit(f, args...))
+			return true;
+
+	// If none of our children handled this event, then it could be for us.
+	return (this->*f)(args...);
+}

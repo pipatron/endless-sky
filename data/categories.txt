@@ -22,14 +22,19 @@ category "ship"
 	"Light Warship"
 	"Medium Warship"
 	"Heavy Warship"
+	"Superheavy"
 	"Fighter"
 	"Drone"
+	"Unclassified"
+	"Unclassified Minor"
+	"Game Mechanics"
 
 
 # Ships of these types can be carried by other ships.
 category "bay type"
 	"Drone"
 	"Fighter"
+	"Unclassified Minor"
 
 
 # Outfits of these types can be bought and sold via the outfitter.

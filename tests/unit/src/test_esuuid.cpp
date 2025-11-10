@@ -16,14 +16,10 @@ this program. If not, see <https://www.gnu.org/licenses/>.
 #include "es-test.hpp"
 #include "output-capture.hpp"
 
-// Include only the tested class's header.
+// Include only the tested classes' headers.
+#include "../../../source/comparators/ByUUID.h"
 #include "../../../source/EsUuid.h"
-// Declare the existence of the class internals that will be tested.
-namespace es_uuid {
-namespace detail {
-	EsUuid::UuidType MakeUuid();
-}
-}
+
 #include "../../../source/Random.h"
 
 // ... and any system includes needed for the test file.
@@ -55,7 +51,13 @@ struct Identifiable {
 };
 struct InstantiableContainer : public Identifiable {
 	std::vector<InstantiableContainer> items;
-	std::vector<InstantiableContainer> others;
+	std::list<InstantiableContainer> others;
+
+	InstantiableContainer() noexcept = default;
+	InstantiableContainer(const InstantiableContainer &) noexcept = default;
+	InstantiableContainer &operator=(const InstantiableContainer &) noexcept = default;
+	InstantiableContainer(InstantiableContainer &&) noexcept = default;
+	InstantiableContainer &operator=(InstantiableContainer &&) noexcept = default;
 
 	std::vector<std::string> GetIds() const {
 		auto result = std::vector<std::string>{
@@ -102,30 +104,30 @@ auto AsStrings = [](const std::vector<EsUuid> &container) -> std::vector<std::st
 TEST_CASE( "EsUuid class", "[uuid]" ) {
 	using T = EsUuid;
 	SECTION( "Class Traits" ) {
-		CHECK_FALSE( std::is_trivial<T>::value );
-		CHECK( std::is_standard_layout<T>::value );
-		CHECK( std::is_nothrow_destructible<T>::value );
-		CHECK( std::is_trivially_destructible<T>::value );
+		CHECK_FALSE( std::is_trivial_v<T> );
+		CHECK( std::is_standard_layout_v<T> );
+		CHECK( std::is_nothrow_destructible_v<T> );
+		CHECK( std::is_trivially_destructible_v<T> );
 	}
 	SECTION( "Construction Traits" ) {
-		CHECK( std::is_default_constructible<T>::value );
+		CHECK( std::is_default_constructible_v<T> );
 		// Ensuring the memory associated with the UUID is initialized means a non-trivial default constructor.
-		CHECK_FALSE( std::is_trivially_default_constructible<T>::value );
-		CHECK( std::is_nothrow_default_constructible<T>::value );
+		CHECK_FALSE( std::is_trivially_default_constructible_v<T> );
+		CHECK( std::is_nothrow_default_constructible_v<T> );
 		// TODO: enable after refactoring how we create ships from stock models.
-		// CHECK_FALSE( std::is_copy_constructible<T>::value );
-		CHECK( std::is_move_constructible<T>::value );
-		CHECK( std::is_trivially_move_constructible<T>::value );
-		CHECK( std::is_nothrow_move_constructible<T>::value );
+		// CHECK_FALSE( std::is_copy_constructible_v<T> );
+		CHECK( std::is_move_constructible_v<T> );
+		CHECK( std::is_trivially_move_constructible_v<T> );
+		CHECK( std::is_nothrow_move_constructible_v<T> );
 	}
 	// TODO: enable, as above.
 	// SECTION( "Copy Traits" ) {
-	// 	CHECK_FALSE( std::is_copy_assignable<T>::value );
+	// 	CHECK_FALSE( std::is_copy_assignable_v<T> );
 	// }
 	SECTION( "Move Traits" ) {
-		CHECK( std::is_move_assignable<T>::value );
-		CHECK( std::is_trivially_move_assignable<T>::value );
-		CHECK( std::is_nothrow_move_assignable<T>::value );
+		CHECK( std::is_move_assignable_v<T> );
+		CHECK( std::is_trivially_move_assignable_v<T> );
+		CHECK( std::is_nothrow_move_assignable_v<T> );
 	}
 }
 
@@ -180,7 +182,7 @@ SCENARIO( "Comparing IDs", "[uuid][comparison]" ) {
 				CHECK_FALSE( id == other );
 			}
 			WHEN( "the second clones the first" ) {
-				other.clone(id);
+				other.Clone(id);
 				THEN( "the two are equal" ) {
 					CHECK( other == id );
 					CHECK_FALSE( other != id );
@@ -233,7 +235,7 @@ SCENARIO( "Copying uniquely identifiable objects", "[uuid][copying]" ) {
 		}
 		WHEN( "a copy is explicitly requested" ) {
 			Identifiable other;
-			other.id.clone(source.id);
+			other.id.Clone(source.id);
 			THEN( "the copy has the same ID string" ) {
 				CHECK( other.id.ToString() == sourceId );
 			}
@@ -343,7 +345,7 @@ SCENARIO( "Mapping identifiable collections", "[uuid][comparison][collections]" 
 	GIVEN( "two objects with the same UUID" ) {
 		auto source = std::make_shared<T>();
 		auto cloned = std::make_shared<T>();
-		cloned->id.clone(source->UUID());
+		cloned->id.Clone(source->UUID());
 		WHEN( "the collection has a default comparator" ) {
 			auto collection = std::set<std::shared_ptr<T>>{};
 			REQUIRE( collection.emplace(source).second );
@@ -352,7 +354,7 @@ SCENARIO( "Mapping identifiable collections", "[uuid][comparison][collections]" 
 			}
 		}
 		WHEN( "the collection uses an ID comparator" ) {
-			auto collection = std::set<std::shared_ptr<T>, UUIDComparator<T>>{};
+			auto collection = std::set<std::shared_ptr<T>, ByUUID<T>>{};
 			REQUIRE( collection.emplace(source).second );
 			THEN( "only one object may be added" ) {
 				CHECK_FALSE( collection.emplace(cloned).second );
@@ -360,7 +362,7 @@ SCENARIO( "Mapping identifiable collections", "[uuid][comparison][collections]" 
 		}
 	}
 	GIVEN( "a collection of items with UUIDs" ) {
-		auto collection = std::map<std::shared_ptr<T>, int, UUIDComparator<T>>{};
+		auto collection = std::map<std::shared_ptr<T>, int, ByUUID<T>>{};
 		auto first = std::make_shared<T>();
 		auto second = std::make_shared<T>();
 		collection.insert({ {first, -1}, {second, -2} });
@@ -369,6 +371,22 @@ SCENARIO( "Mapping identifiable collections", "[uuid][comparison][collections]" 
 		THEN( "item retrieval works correctly" ) {
 			CHECK( collection.at(first) == -1 );
 			CHECK( collection.at(second) == -2 );
+		}
+	}
+	GIVEN( "a collection of strings as ID comparator, with UUIDs, identifying items" ) {
+		auto collection = std::map<std::string, EsUuid>{};
+		Identifiable first;
+		Identifiable second;
+		std::string firstName = "one";
+		std::string secondName = "two";
+		collection.insert({ {firstName, EsUuid()}, {secondName, EsUuid()} });
+		WHEN( "we use strings to find the corresponding UUID in the collection" ) {
+			collection.at(firstName).Clone(first.id);
+			collection.at(secondName).Clone(second.id);
+			THEN( "we can use them to identify the items in a unique way" ) {
+				CHECK( collection.at(firstName) == first.id );
+				CHECK( collection.at(secondName) == second.id );
+			}
 		}
 	}
 }
@@ -387,7 +405,7 @@ SCENARIO( "Mapping identifiable collections", "[uuid][comparison][collections]" 
 #ifdef CATCH_CONFIG_ENABLE_BENCHMARKING
 TEST_CASE( "Benchmark UUID Creation", "[!benchmark][uuid]" ) {
 	BENCHMARK( "MakeUuid" ) {
-		return es_uuid::detail::MakeUuid();
+		return EsUuid::MakeUuid();
 	};
 }
 #endif

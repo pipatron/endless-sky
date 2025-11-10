@@ -16,7 +16,8 @@ this program. If not, see <https://www.gnu.org/licenses/>.
 #include "MapPlanetCard.h"
 
 #include "Color.h"
-#include "FillShader.h"
+#include "text/DisplayText.h"
+#include "shader/FillShader.h"
 #include "text/Font.h"
 #include "text/FontSet.h"
 #include "GameData.h"
@@ -25,29 +26,55 @@ this program. If not, see <https://www.gnu.org/licenses/>.
 #include "MapDetailPanel.h"
 #include "Planet.h"
 #include "Point.h"
-#include "PointerShader.h"
-#include "Politics.h"
+#include "shader/PointerShader.h"
 #include "Screen.h"
-#include "SpriteShader.h"
+#include "image/Sprite.h"
+#include "shader/SpriteShader.h"
 #include "StellarObject.h"
+#include "System.h"
 #include "text/WrappedText.h"
 
 using namespace std;
 
+namespace {
+	bool hasGovernments = false;
+}
 
 
-MapPlanetCard::MapPlanetCard(const StellarObject &object, unsigned number, bool hasVisited)
-	: number(number), hasVisited(hasVisited), planetName(object.Name())
+
+MapPlanetCard::MapPlanetCard(const StellarObject &object, unsigned number, bool hasVisited,
+		const MapDetailPanel *parent)
+	: parent(parent), number(number), hasVisited(hasVisited), planetName(object.DisplayName())
 {
 	planet = object.GetPlanet();
-	hasSpaceport = planet->HasSpaceport();
+	hasSpaceport = planet->HasServices();
 	hasShipyard = planet->HasShipyard();
 	hasOutfitter = planet->HasOutfitter();
+	governmentName = planet->GetGovernment()->DisplayName();
+	string systemGovernmentName = planet->GetSystem()->GetGovernment()->DisplayName();
+	if(governmentName != "Uninhabited" && governmentName != systemGovernmentName)
+		hasGovernments = true;
 
-	reputationLabel = !hasSpaceport ? "No Spaceport" :
-		GameData::GetPolitics().HasDominated(planet) ? "Dominated" :
-		planet->GetGovernment()->IsEnemy() ? "Hostile" :
-		planet->CanLand() ? "Friendly" : "Restricted";
+	if(!hasSpaceport)
+		reputationLabel = "No Spaceport";
+	else
+	{
+		switch(planet->GetFriendliness())
+		{
+			case Planet::Friendliness::FRIENDLY:
+				reputationLabel = "Friendly";
+				break;
+			case Planet::Friendliness::RESTRICTED:
+				reputationLabel = "Restricted";
+				break;
+			case Planet::Friendliness::HOSTILE:
+				reputationLabel = "Hostile";
+				break;
+			case Planet::Friendliness::DOMINATED:
+				reputationLabel = "Dominated";
+				break;
+		}
+	}
 
 	sprite = object.GetSprite();
 
@@ -77,20 +104,20 @@ MapPlanetCard::ClickAction MapPlanetCard::Click(int x, int y, int clicks)
 		double relativeY = (y - yCoordinate);
 		if(relativeY > 0. && relativeY < AvailableSpace())
 		{
-			isSelected = true;
-
 			// The first category is the planet name and is not selectable.
 			if(x > Screen::Left() + planetIconMaxSize &&
-					relativeY > textStart + categorySize && relativeY < textStart + categorySize * categories)
+					relativeY > textStart + categorySize && relativeY < textStart + categorySize * (categories + hasGovernments))
 				selectedCategory = (relativeY - textStart - categorySize) / categorySize;
 			else
 				clickAction = ClickAction::SELECTED;
 
-			static const int SHOW[4] = {MapPanel::SHOW_REPUTATION, MapPanel::SHOW_SHIPYARD,
-										MapPanel::SHOW_OUTFITTER, MapPanel::SHOW_VISITED};
+			static const int SHOW[5] = {MapPanel::SHOW_GOVERNMENT, MapPanel::SHOW_REPUTATION,
+										MapPanel::SHOW_SHIPYARD, MapPanel::SHOW_OUTFITTER,
+										MapPanel::SHOW_VISITED};
 			if(clickAction != ClickAction::SELECTED)
 			{
-				clickAction = static_cast<ClickAction>(SHOW[selectedCategory]);
+				// If there are no governments shown, the first category is the reputation.
+				clickAction = static_cast<ClickAction>(SHOW[selectedCategory + !hasGovernments]);
 				// Double clicking results in going to the shipyard/outfitter.
 				if(clickAction == ClickAction::SHOW_SHIPYARD && clicks > 1)
 					clickAction = ClickAction::GOTO_SHIPYARD;
@@ -123,7 +150,7 @@ bool MapPlanetCard::DrawIfFits(const Point &uiPoint)
 		const auto alignLeft = Layout(planetCardInterface->GetValue("width") - planetIconMaxSize, Truncate::BACK);
 
 		// Height of one MapPlanetCard element.
-		const double height = planetCardInterface->GetValue("height");
+		const double height = Height();
 		// Point at which the text starts (after the top margin), at first there is the planet's name,
 		// and then it is divided into clickable categories of the same size.
 		const double textStart = planetCardInterface->GetValue("text start");
@@ -166,23 +193,26 @@ bool MapPlanetCard::DrawIfFits(const Point &uiPoint)
 		};
 
 		// Draw the name of the planet.
-		if(FitsCategory(5.))
+		if(FitsCategory(categories + hasGovernments))
 			font.Draw({ planetName, alignLeft }, uiPoint + Point(0, textStart), isSelected ? medium : dim);
 
-		// Draw the reputation, shipyard, outfitter and visited.
+		// Draw the government name, reputation, shipyard, outfitter and visited.
 		const double margin = mapInterface->GetValue("text margin");
+		if(hasGovernments && FitsCategory(categories))
+			font.Draw(governmentName, uiPoint + Point(margin, textStart + categorySize),
+				governmentName == "Uninhabited" ? faint : dim);
 		if(FitsCategory(4.))
-			font.Draw(reputationLabel, uiPoint + Point(margin, textStart + categorySize),
+			font.Draw(reputationLabel, uiPoint + Point(margin, textStart + categorySize * (1. + hasGovernments)),
 				hasSpaceport ? medium : faint);
 		if(FitsCategory(3.))
-			font.Draw("Shipyard", uiPoint + Point(margin, textStart + categorySize * 2.),
+			font.Draw("Shipyard", uiPoint + Point(margin, textStart + categorySize * (2. + hasGovernments)),
 				hasShipyard ? medium : faint);
 		if(FitsCategory(2.))
-			font.Draw("Outfitter", uiPoint + Point(margin, textStart + categorySize * 3.),
+			font.Draw("Outfitter", uiPoint + Point(margin, textStart + categorySize * (3. + hasGovernments)),
 				hasOutfitter ? medium : faint);
 		if(FitsCategory(1.))
 			font.Draw(hasVisited ? "(has been visited)" : "(not yet visited)",
-				uiPoint + Point(margin, textStart + categorySize * 4.), dim);
+				uiPoint + Point(margin, textStart + categorySize * (4. + hasGovernments)), dim);
 
 		// Draw the arrow pointing to the selected category.
 		if(FitsCategory(categories - (selectedCategory + 1.)))
@@ -235,22 +265,38 @@ void MapPlanetCard::Select(bool select)
 
 
 
+double MapPlanetCard::Height()
+{
+	const Interface *planetCardInterface = GameData::Interfaces().Get("map planet card");
+	return planetCardInterface->GetValue("height padding") +
+		(planetCardInterface->GetValue("categories") + hasGovernments) *
+		planetCardInterface->GetValue("category size");
+}
+
+
+
+void MapPlanetCard::ResetSize()
+{
+	hasGovernments = false;
+}
+
+
+
 void MapPlanetCard::Highlight(double availableSpace) const
 {
 	const Interface *planetCardInterface = GameData::Interfaces().Get("map planet card");
 	const double width = planetCardInterface->GetValue("width");
 
-	FillShader::Fill(Point(Screen::Left() + width / 2., yCoordinate + availableSpace / 2.),
-		Point(width, availableSpace), *GameData::Colors().Get("item selected"));
+	Rectangle highlightRegion = Rectangle::FromCorner(Point(Screen::Left(), yCoordinate), Point(width, availableSpace));
+	FillShader::Fill(highlightRegion, *GameData::Colors().Get("item selected"));
 }
 
 
 
 double MapPlanetCard::AvailableTopSpace() const
 {
-	const Interface *planetCardInterface = GameData::Interfaces().Get("map planet card");
-	const double height = planetCardInterface->GetValue("height");
-	return min(height, max(0., (number + 1) * height - MapDetailPanel::GetScroll()));
+	const double height = Height();
+	return min(height, max(0., (number + 1) * height - parent->GetScroll()));
 }
 
 
@@ -259,9 +305,7 @@ double MapPlanetCard::AvailableBottomSpace() const
 {
 	const Interface *mapInterface = GameData::Interfaces().Get("map detail panel");
 	double maxPlanetPanelHeight = mapInterface->GetValue("max planet panel height");
-	const Interface *planetCardInterface = GameData::Interfaces().Get("map planet card");
-	double height = planetCardInterface->GetValue("height");
 
-	return min(height, max(0., Screen::Top() +
+	return min(Height(), max(0., Screen::Top() +
 		min(MapDetailPanel::PlanetPanelHeight(), maxPlanetPanelHeight) - yCoordinate));
 }

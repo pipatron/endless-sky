@@ -19,24 +19,24 @@ this program. If not, see <https://www.gnu.org/licenses/>.
 #include "Command.h"
 #include "ConversationPanel.h"
 #include "text/DisplayText.h"
-#include "FillShader.h"
+#include "shader/FillShader.h"
 #include "text/Font.h"
 #include "text/FontSet.h"
-#include "text/Format.h"
 #include "GameData.h"
 #include "Information.h"
 #include "Interface.h"
-#include "text/layout.hpp"
 #include "MainPanel.h"
 #include "Planet.h"
 #include "PlayerInfo.h"
 #include "Preferences.h"
 #include "Rectangle.h"
+#include "Ship.h"
 #include "ShipyardPanel.h"
-#include "StarField.h"
+#include "Shop.h"
+#include "shader/StarField.h"
 #include "StartConditions.h"
 #include "System.h"
-#include "text/truncate.hpp"
+#include "text/Truncate.h"
 #include "UI.h"
 
 #include <algorithm>
@@ -46,12 +46,22 @@ using namespace std;
 
 
 StartConditionsPanel::StartConditionsPanel(PlayerInfo &player, UI &gamePanels,
-	const StartConditionsList &scenarios, const Panel *parent)
-	: player(player), gamePanels(gamePanels), parent(parent), scenarios(scenarios), startIt(scenarios.begin()),
+	const StartConditionsList &allScenarios, const Panel *parent)
+	: player(player), gamePanels(gamePanels), parent(parent),
 	bright(*GameData::Colors().Get("bright")), medium(*GameData::Colors().Get("medium")),
 	selectedBackground(*GameData::Colors().Get("faint")),
 	description(FontSet::Get(14))
 {
+	// Extract from all start scenarios those that are visible to the player.
+	for(const auto &scenario : allScenarios)
+		if(scenario.Visible())
+		{
+			scenarios.emplace_back(scenario);
+			scenarios.back().SetState();
+		}
+
+	startIt = scenarios.begin();
+
 	const Interface *startConditionsMenu = GameData::Interfaces().Find("start conditions menu");
 	if(startConditionsMenu)
 	{
@@ -81,7 +91,7 @@ StartConditionsPanel::StartConditionsPanel(PlayerInfo &player, UI &gamePanels,
 void StartConditionsPanel::Draw()
 {
 	glClear(GL_COLOR_BUFFER_BIT);
-	GameData::Background().Draw(Point(), Point());
+	GameData::Background().Draw(Point());
 
 	GameData::Interfaces().Get("menu background")->Draw(info, this);
 	GameData::Interfaces().Get("start conditions menu")->Draw(info, this);
@@ -110,7 +120,7 @@ void StartConditionsPanel::Draw()
 
 		bool isHighlighted = it == startIt || (hasHover && zone.Contains(hoverPoint));
 		if(it == startIt)
-			FillShader::Fill(zone.Center(), zone.Dimensions(), selectedBackground.Additive(opacity));
+			FillShader::Fill(zone, selectedBackground.Additive(opacity));
 
 		const auto name = DisplayText(it->GetDisplayName(), Truncate::BACK);
 		font.Draw(name, pos + entryTextPadding, (isHighlighted ? bright : medium).Transparent(opacity));
@@ -148,7 +158,8 @@ bool StartConditionsPanel::KeyDown(SDL_Keycode key, Uint16 mod, const Command &c
 
 		Select(startIt);
 	}
-	else if(startIt != scenarios.end() && (key == 's' || key == 'n' || key == SDLK_KP_ENTER || key == SDLK_RETURN))
+	else if(startIt != scenarios.end() && (key == 's' || key == 'n' || key == SDLK_KP_ENTER || key == SDLK_RETURN)
+		&& info.HasCondition("unlocked start"))
 	{
 		player.New(*startIt);
 
@@ -156,19 +167,24 @@ bool StartConditionsPanel::KeyDown(SDL_Keycode key, Uint16 mod, const Command &c
 			player, startIt->GetConversation());
 		GetUI()->Push(panel);
 		panel->SetCallback(this, &StartConditionsPanel::OnConversationEnd);
+		return true;
 	}
 	else
 		return false;
 
+	UI::PlaySound(UI::UISound::NORMAL);
 	return true;
 }
 
 
 
-bool StartConditionsPanel::Click(int x, int y, int /* clicks */)
+bool StartConditionsPanel::Click(int x, int y, MouseButton button, int /* clicks */)
 {
 	// When the user clicks, clear the hovered state.
 	hasHover = false;
+
+	if(button != MouseButton::LEFT)
+		return false;
 
 	// Only clicks within the list of scenarios should have an effect.
 	if(!entriesContainer.Contains(Point(x, y)))
@@ -179,6 +195,7 @@ bool StartConditionsPanel::Click(int x, int y, int /* clicks */)
 		{
 			if(startIt != it.Value())
 				Select(it.Value());
+			UI::PlaySound(UI::UISound::NORMAL);
 			return true;
 		}
 
@@ -235,7 +252,10 @@ void StartConditionsPanel::OnConversationEnd(int)
 	// If the starting conditions don't specify any ships, let the player buy one.
 	if(player.Ships().empty())
 	{
-		gamePanels.Push(new ShipyardPanel(player));
+		Sale<Ship> shipyardStock;
+		for(const Shop<Ship> *shop : player.GetPlanet()->Shipyards())
+			shipyardStock.Add(shop->Stock());
+		gamePanels.Push(new ShipyardPanel(player, shipyardStock));
 		gamePanels.StepAll();
 	}
 	if(parent)
@@ -282,30 +302,35 @@ void StartConditionsPanel::ScrollToSelected()
 
 
 // Update the UI to reflect the given starting scenario.
-void StartConditionsPanel::Select(StartConditionsList::const_iterator it)
+void StartConditionsPanel::Select(StartConditionsList::iterator it)
 {
+	// Clear the displayed information.
+	info = Information();
+
 	startIt = it;
 	if(startIt == scenarios.end())
 	{
 		// The only time we should be here is if there are no scenarios at all.
-		// Just in case that's not true, clear out the displayed information.
-		info = Information();
 		description.Wrap("No valid starting scenarios were defined!\n\n"
 			"Make sure you installed Endless Sky (and any plugins) properly.");
 		return;
 	}
 
+
 	// Update the information summary.
 	info.SetCondition("chosen start");
+	if(startIt->IsUnlocked())
+		info.SetCondition("unlocked start");
 	if(startIt->GetThumbnail())
 		info.SetSprite("thumbnail", startIt->GetThumbnail());
 	info.SetString("name", startIt->GetDisplayName());
 	info.SetString("description", startIt->GetDescription());
-	info.SetString("planet", startIt->GetPlanet().Name());
-	info.SetString("system", startIt->GetSystem().Name());
-	info.SetString("date", startIt->GetDate().ToString());
-	info.SetString("credits", Format::Credits(startIt->GetAccounts().Credits()));
-	info.SetString("debt", Format::Credits(startIt->GetAccounts().TotalDebt()));
+	info.SetString("planet", startIt->GetPlanetName());
+	info.SetString("system", startIt->GetSystemName());
+	info.SetString("date", startIt->GetDateString());
+	info.SetString("credits", startIt->GetCredits());
+	info.SetString("debt", startIt->GetDebt());
+
 
 	// Update the displayed description text.
 	descriptionScroll = 0;

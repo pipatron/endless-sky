@@ -13,36 +13,16 @@ You should have received a copy of the GNU General Public License along with
 this program. If not, see <https://www.gnu.org/licenses/>.
 */
 
-#ifndef PRINT_DATA_H_
-#define PRINT_DATA_H_
+#pragma once
+
+class PlayerInfo;
+
+
 
 // A class containing methods used to print ship and outfit stats to the console.
 class PrintData {
 public:
 	static bool IsPrintDataArgument(const char *const *argv);
-	static void Print(const char *const *argv);
+	static void Print(const char *const *argv, const PlayerInfo &player);
 	static void Help();
-
-
-private:
-	static void Ships(const char *const *argv);
-	static void PrintBaseShipStats();
-	static void PrintLoadedShipStats(bool variants = false);
-	static void PrintShipList(bool variants = false);
-
-	static void PrintWeaponStats();
-
-	static void PrintEngineStats();
-
-	static void PrintPowerStats();
-
-	static void Outfits(const char *const *argv);
-	static void PrintOutfitsAllStats();
-
-	static void Planets(const char *const *argv);
-	static void PrintPlanetDescriptions();
-
-	static void Systems(const char *const *argv);
 };
-
-#endif

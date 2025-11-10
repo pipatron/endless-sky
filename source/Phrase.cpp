@@ -23,6 +23,36 @@ using namespace std;
 
 
 
+// Replace all occurrences ${phrase name} with the expanded phrase from GameData::Phrases()
+std::string Phrase::ExpandPhrases(const std::string &source)
+{
+	string result;
+	size_t next = 0;
+	while(next < source.length())
+	{
+		size_t var = source.find("${", next);
+		if(var == string::npos)
+			break;
+		else if(var > next)
+			result.append(source, next, var - next);
+		next = source.find('}', var);
+		if(next == string::npos)
+			break;
+		++next;
+		string phraseName = string{source, var + 2, next - var - 3};
+		const Phrase *phrase = GameData::Phrases().Find(phraseName);
+		result.append(phrase ? phrase->Get() : phraseName);
+	}
+	// Optimization for most common case: no phrase in string:
+	if(!next)
+		return source;
+	else if(next < source.length())
+		result.append(source, next, string::npos);
+	return result;
+}
+
+
+
 Phrase::Phrase(const DataNode &node)
 {
 	Load(node);
@@ -182,13 +212,14 @@ void Phrase::Sentence::Load(const DataNode &node, const Phrase *parent)
 		emplace_back();
 		auto &part = back();
 
-		if(child.Token(0) == "word")
+		const string &key = child.Token(0);
+		if(key == "word")
 			for(const DataNode &grand : child)
 				part.choices.emplace_back((grand.Size() >= 2) ? max<int>(1, grand.Value(1)) : 1, grand);
-		else if(child.Token(0) == "phrase")
+		else if(key == "phrase")
 			for(const DataNode &grand : child)
 				part.choices.emplace_back((grand.Size() >= 2) ? max<int>(1, grand.Value(1)) : 1, grand, true);
-		else if(child.Token(0) == "replace")
+		else if(key == "replace")
 			for(const DataNode &grand : child)
 				part.replacements.emplace_back(grand.Token(0), (grand.Size() >= 2) ? grand.Token(1) : string{});
 		else

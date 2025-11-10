@@ -13,8 +13,7 @@ You should have received a copy of the GNU General Public License along with
 this program. If not, see <https://www.gnu.org/licenses/>.
 */
 
-#ifndef DATE_H_
-#define DATE_H_
+#pragma once
 
 #include <string>
 
@@ -53,13 +52,24 @@ public:
 	bool operator==(const Date &other) const;
 	bool operator!=(const Date &other) const;
 
-	// Get the number of days that have elapsed since the "epoch".
+	// Get the number of days that have elapsed since the "epoch" and the start of this year.
 	int DaysSinceEpoch() const;
+	int DaysSinceYearStart() const;
+	int DaysUntilYearEnd() const;
 
 	// Get the date as numbers.
 	int Day() const;
 	int Month() const;
 	int Year() const;
+
+	// Figure out the day of the week of the given date. Uses Zeller's congruence, meaning that
+	// 0 is Saturday and 6 is Friday.
+	int WeekdayNumberOffset() const;
+
+
+private:
+	// Get the abbreviation of the current weekday (e.g. Sun for Sunday, Mon for Monday, etc.).
+	const std::string &Weekday() const;
 
 
 private:
@@ -70,7 +80,3 @@ private:
 	mutable int daysSinceEpoch = 0;
 	mutable std::string str;
 };
-
-
-
-#endif
